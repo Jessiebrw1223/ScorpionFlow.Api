@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "owners update own subscription" ON public.account_subscriptions;

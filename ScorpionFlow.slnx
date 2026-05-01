@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="ScorpionFlow.API/ScorpionFlow.API.csproj" />
+  <Project Path="ScorpionFlow.Application/ScorpionFlow.Application.csproj" />
+  <Project Path="ScorpionFlow.Domain/ScorpionFlow.Domain.csproj" />
+  <Project Path="ScorpionFlow.Infrastructure/ScorpionFlow.Infrastructure.csproj" />
+</Solution>
