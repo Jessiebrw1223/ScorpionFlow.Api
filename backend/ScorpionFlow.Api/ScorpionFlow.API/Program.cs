@@ -43,6 +43,7 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
+// CORS para Vercel + Local
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
@@ -53,25 +54,38 @@ builder.Services.AddCors(options =>
 
         if (allowedOrigins is { Length: > 0 })
         {
-            policy.WithOrigins(allowedOrigins)
+            policy
+                .WithOrigins(allowedOrigins)
                 .AllowAnyHeader()
                 .AllowAnyMethod();
         }
         else
         {
-            policy.AllowAnyOrigin()
+            policy
+                .WithOrigins(
+                    "https://scorpionflow-web.vercel.app",
+                    "http://localhost:5173",
+                    "http://localhost:3000"
+                )
                 .AllowAnyHeader()
                 .AllowAnyMethod();
         }
     });
 });
 
-var jwtSecret = builder.Configuration["Jwt:Secret"]
-    ?? "dev-only-change-this-secret-before-deploy";
+var jwtSecret = builder.Configuration["Jwt:Secret"];
+
+if (string.IsNullOrWhiteSpace(jwtSecret))
+{
+    throw new InvalidOperationException("Jwt:Secret no está configurado.");
+}
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        options.RequireHttpsMetadata = true;
+        options.SaveToken = true;
+
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = false,
@@ -93,8 +107,10 @@ var app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI();
 
-// En Render no es necesario. Render ya expone HTTPS.
+// Render ya maneja HTTPS externamente.
 // app.UseHttpsRedirection();
+
+app.UseRouting();
 
 app.UseCors("Frontend");
 
@@ -112,6 +128,8 @@ app.MapGet("/", () => Results.Ok(new
     {
         "/api/health",
         "/swagger",
+        "/api/auth/login",
+        "/api/auth/register",
         "/api/mercadopago/create-preference"
     },
     utc = DateTimeOffset.UtcNow
