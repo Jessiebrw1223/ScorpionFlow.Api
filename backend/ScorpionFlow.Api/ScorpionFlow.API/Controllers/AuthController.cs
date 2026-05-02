@@ -9,8 +9,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using ScorpionFlow.Infrastructure.Persistence;
-using Npgsql;
-using Microsoft.EntityFrameworkCore;
 
 namespace ScorpionFlow.API.Controllers;
 
@@ -63,15 +61,15 @@ public class AuthController : ControllerBase
         await EnsureAuthSchema(ct);
 
         if (await FindUserByEmail(email, ct) is not null)
-            {
-             return Conflict(new { message = "Este correo ya está registrado." });
-            }
+            return Conflict(new { message = "Este correo ya está registrado." });
+
+        var id = Guid.NewGuid();
+        var passwordHash = HashPassword(request.Password);
 
         await using var connection = _db.Database.GetDbConnection();
-            if (connection.State != ConnectionState.Open)
-        await connection.OpenAsync(ct);
+        if (connection.State != ConnectionState.Open) await connection.OpenAsync(ct);
 
-// INSERT normal
+        await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             insert into public.app_auth_users (id, email, password_hash, full_name)
             values (@id, @email, @password_hash, @full_name)
@@ -145,21 +143,30 @@ public class AuthController : ControllerBase
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private async Task<object?> FindUserByEmail(string email, CancellationToken ct)
-{
-    await using var connection = _db.Database.GetDbConnection();
+    private async Task<AuthUserRow?> FindUserByEmail(string email, CancellationToken ct)
+    {
+        await using var connection = _db.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open) await connection.OpenAsync(ct);
 
-    if (connection.State != ConnectionState.Open)
-        await connection.OpenAsync(ct);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            select id, email, password_hash, full_name
+            from public.app_auth_users
+            where lower(email) = lower(@email)
+            limit 1
+        """;
+        AddParameter(cmd, "email", NormalizeEmail(email));
 
-    await using var cmd = connection.CreateCommand();
-    cmd.CommandText = "SELECT id FROM public.app_auth_users WHERE email = @email";
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return null;
 
-    AddParameter(cmd, "email", email);
-
-    var result = await cmd.ExecuteScalarAsync(ct);
-    return result;
-}
+        return new AuthUserRow(
+            reader.GetGuid(0),
+            reader.GetString(1),
+            reader.GetString(2),
+            reader.IsDBNull(3) ? null : reader.GetString(3)
+        );
+    }
 
     private object CreateSession(Guid userId, string email, IDictionary<string, object>? metadata)
     {
