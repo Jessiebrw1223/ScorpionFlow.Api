@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using ScorpionFlow.Infrastructure.Persistence;
+using Npgsql;
 
 namespace ScorpionFlow.API.Controllers;
 
@@ -143,31 +144,35 @@ public class AuthController : ControllerBase
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private async Task<AuthUserRow?> FindUserByEmail(string email, CancellationToken ct)
-    {
-        await using var connection = _db.Database.GetDbConnection();
-        if (connection.State != ConnectionState.Open) await connection.OpenAsync(ct);
+   private async Task<AuthUserRow?> FindUserByEmail(string email, CancellationToken ct)
+{
+    var connString = _configuration.GetConnectionString("DefaultConnection");
 
-        await using var cmd = connection.CreateCommand();
-        cmd.CommandText = """
-            select id, email, password_hash, full_name
-            from public.app_auth_users
-            where lower(email) = lower(@email)
-            limit 1
-        """;
-        AddParameter(cmd, "email", NormalizeEmail(email));
+    await using var connection = new Npgsql.NpgsqlConnection(connString);
+    await connection.OpenAsync(ct);
 
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        if (!await reader.ReadAsync(ct)) return null;
+    await using var cmd = connection.CreateCommand();
+    cmd.CommandText = """
+        select id, email, password_hash, full_name
+        from public.app_auth_users
+        where lower(email) = lower(@email)
+        limit 1
+    """;
 
-        return new AuthUserRow(
-            reader.GetGuid(0),
-            reader.GetString(1),
-            reader.GetString(2),
-            reader.IsDBNull(3) ? null : reader.GetString(3)
-        );
-    }
+    AddParameter(cmd, "email", NormalizeEmail(email));
 
+    await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+    if (!await reader.ReadAsync(ct))
+        return null;
+
+    return new AuthUserRow(
+        reader.GetGuid(0),
+        reader.GetString(1),
+        reader.GetString(2),
+        reader.IsDBNull(3) ? null : reader.GetString(3)
+    );
+}
     private object CreateSession(Guid userId, string email, IDictionary<string, object>? metadata)
     {
         var user = CreateUser(userId, email, metadata);
