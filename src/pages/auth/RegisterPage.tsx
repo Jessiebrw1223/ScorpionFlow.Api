@@ -92,49 +92,65 @@ export default function RegisterPage() {
   }, [authLoading, user, pendingRedirect, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrors({});
-    const parsed = schema.safeParse({ fullName, email, password, confirmPassword });
-    if (!parsed.success) {
-      const fld = parsed.error.flatten().fieldErrors;
-      setErrors({
-        fullName: fld.fullName?.[0] || "",
-        email: fld.email?.[0] || "",
-        password: fld.password?.[0] || "",
-        confirmPassword: fld.confirmPassword?.[0] || "",
-      });
-      return;
-    }
+  e.preventDefault();
+  setErrors({});
 
-    setLoading(true);
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/`,
-        data: { full_name: fullName },
-      },
+  const parsed = schema.safeParse({ fullName, email, password, confirmPassword });
+
+  if (!parsed.success) {
+    const fld = parsed.error.flatten().fieldErrors;
+    setErrors({
+      fullName: fld.fullName?.[0] || "",
+      email: fld.email?.[0] || "",
+      password: fld.password?.[0] || "",
+      confirmPassword: fld.confirmPassword?.[0] || "",
     });
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const apiUrl = import.meta.env.VITE_API_URL ?? "https://scorpionflow-api.onrender.com";
+
+    const res = await fetch(`${apiUrl}/api/auth/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+          },
+        },
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data?.message ?? "Error al registrar");
+    }
+
+    localStorage.setItem("scorpionflow_access_token", data.access_token);
+    localStorage.setItem("scorpionflow_user", JSON.stringify(data.user));
+
+    toast.success("¡Cuenta creada!", {
+      description: "Ya puedes acceder al sistema.",
+    });
+
+    navigate("/dashboard", { replace: true });
+  } catch (error) {
+    toast.error("No se pudo crear la cuenta", {
+      description: error instanceof Error ? error.message : "Error inesperado.",
+    });
+  } finally {
     setLoading(false);
-
-    if (error) {
-      if (error.message.toLowerCase().includes("already")) {
-        toast.error("Correo ya registrado", { description: "Inicia sesión en su lugar." });
-      } else {
-        toast.error("No se pudo crear la cuenta", { description: error.message });
-      }
-      return;
-    }
-
-    toast.success("¡Cuenta creada!", { description: "Ya puedes acceder al sistema." });
-
-    if (data.session) {
-      setPendingRedirect("/");
-      return;
-    }
-
-    navigate("/auth/login", { replace: true });
-  };
+  }
+};
 
   const handleGoogle = () => {
     toast.info("Google estará disponible después de estabilizar el registro base.");
